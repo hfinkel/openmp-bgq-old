@@ -18,7 +18,7 @@
 #include "kmp_version.h"
 
 // Replace with snapshot date YYYYMMDD for promotion build.
-#define KMP_VERSION_BUILD    20140926
+//#define KMP_VERSION_BUILD    00000000
 
 // Helper macros to convert value of macro to string literal.
 #define _stringer( x ) #x

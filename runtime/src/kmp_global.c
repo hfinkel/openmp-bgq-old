@@ -214,6 +214,8 @@ int __kmp_clock_function_param;
 
 #if KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS)
 enum mic_type __kmp_mic_type = non_mic;
+#elif KMP_OS_CNK
+enum mic_type __kmp_mic_type = bgq;
 #endif
 
 #if KMP_AFFINITY_SUPPORTED

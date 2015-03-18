@@ -392,12 +392,13 @@ enum clock_function_type {
 };
 #endif /* KMP_OS_LINUX */
 
-#if KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS)
+#if KMP_OS_CNK || (KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS))
 enum mic_type {
     non_mic,
     mic1,
     mic2,
     mic3,
+    bgq,
     dummy
 };
 #endif
@@ -507,12 +508,29 @@ extern size_t __kmp_affin_mask_size;
 
 typedef unsigned char kmp_affin_mask_t;
 
+// For big-endian systems, the bytes are swapped.
+#if KMP_ARCH_PPC64
+
+#  define _KMP_CPU_SET(i,mask)   (mask[__kmp_affin_mask_size - i/CHAR_BIT - 1] \
+                                   |= (((kmp_affin_mask_t)1) << (i % CHAR_BIT)))
+#  define KMP_CPU_SET(i,mask)    _KMP_CPU_SET((i), ((kmp_affin_mask_t *)(mask)))
+#  define _KMP_CPU_ISSET(i,mask) (!!(mask[__kmp_affin_mask_size - i/CHAR_BIT - 1] & \
+                                   (((kmp_affin_mask_t)1) << (i % CHAR_BIT))))
+#  define KMP_CPU_ISSET(i,mask)  _KMP_CPU_ISSET((i), ((kmp_affin_mask_t *)(mask)))
+#  define _KMP_CPU_CLR(i,mask)   (mask[__kmp_affin_mask_size - i/CHAR_BIT - 1] &= \
+                                   ~(((kmp_affin_mask_t)1) << (i % CHAR_BIT)))
+#  define KMP_CPU_CLR(i,mask)    _KMP_CPU_CLR((i), ((kmp_affin_mask_t *)(mask)))
+
+#else
+
 #  define _KMP_CPU_SET(i,mask)   (mask[i/CHAR_BIT] |= (((kmp_affin_mask_t)1) << (i % CHAR_BIT)))
 #  define KMP_CPU_SET(i,mask)    _KMP_CPU_SET((i), ((kmp_affin_mask_t *)(mask)))
 #  define _KMP_CPU_ISSET(i,mask) (!!(mask[i/CHAR_BIT] & (((kmp_affin_mask_t)1) << (i % CHAR_BIT))))
 #  define KMP_CPU_ISSET(i,mask)  _KMP_CPU_ISSET((i), ((kmp_affin_mask_t *)(mask)))
 #  define _KMP_CPU_CLR(i,mask)   (mask[i/CHAR_BIT] &= ~(((kmp_affin_mask_t)1) << (i % CHAR_BIT)))
 #  define KMP_CPU_CLR(i,mask)    _KMP_CPU_CLR((i), ((kmp_affin_mask_t *)(mask)))
+
+#endif
 
 #  define KMP_CPU_ZERO(mask) \
         {                                                                    \
@@ -2629,7 +2647,7 @@ extern enum clock_function_type __kmp_clock_function;
 extern int __kmp_clock_function_param;
 # endif /* KMP_OS_LINUX */
 
-#if KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS)
+#if KMP_OS_CNK || (KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS))
 extern enum mic_type __kmp_mic_type;
 #endif
 

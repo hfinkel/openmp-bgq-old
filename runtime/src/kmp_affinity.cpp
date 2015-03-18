@@ -546,6 +546,90 @@ __kmp_affinity_print_topology(AddrUnsPair *address2os, int len, int depth,
     }
 }
 
+#if KMP_OS_CNK
+// Set the default topology information for an IBM BG/Q
+static int
+__kmp_affinity_create_bgq_map(AddrUnsPair **address2os,
+  kmp_i18n_id_t *const msg_id)
+{
+    *address2os = NULL;
+    *msg_id = kmp_i18n_null;
+
+    // Fall back to the flat map if we're not using affinity now.
+    if (! KMP_AFFINITY_CAPABLE() /*|| __kmp_affinity_type == affinity_none*/) {
+      return -1;
+    }
+
+    // Each BG/Q node has only one package, which has 16 cores, and 4 hardware
+    // threads per core.
+    nPackages = 1;
+    __kmp_ncores = nCoresPerPkg = 16;
+    __kmp_nThreadsPerCore = 4;
+
+    if (__kmp_affinity_verbose) {
+        char buf[KMP_AFFIN_MASK_PRINT_LEN];
+        __kmp_affinity_print_mask(buf, KMP_AFFIN_MASK_PRINT_LEN, fullMask);
+
+        if (__kmp_affinity_respect_mask) {
+            KMP_INFORM(InitOSProcSetRespect, "KMP_AFFINITY", buf);
+        } else {
+            KMP_INFORM(InitOSProcSetNotRespect, "KMP_AFFINITY", buf);
+        }
+        KMP_INFORM(AvailableOSProc, "KMP_AFFINITY", __kmp_avail_proc);
+        if (__kmp_affinity_uniform_topology()) {
+            KMP_INFORM(Uniform, "KMP_AFFINITY");
+        } else {
+            KMP_INFORM(NonUniform, "KMP_AFFINITY");
+        }
+        KMP_INFORM(Topology, "KMP_AFFINITY", nPackages, nCoresPerPkg,
+          __kmp_nThreadsPerCore, __kmp_ncores);
+    }
+
+    //
+    // Contruct the data structure to be returned.
+    //
+    int depth = 3;
+    *address2os = (AddrUnsPair*)
+      __kmp_allocate(sizeof(**address2os) * __kmp_avail_proc);
+    int avail_ct = 0;
+    unsigned int i;
+    for (i = 0; i < KMP_CPU_SETSIZE; ++i) {
+        //
+        // Skip this proc if it is not included in the machine model.
+        //
+        if (! KMP_CPU_ISSET(i, fullMask)) {
+            continue;
+        }
+
+        Address addr(depth);
+        // Note: Levels are inverted here.
+        addr.labels[2] = 0;
+        addr.labels[1] = i%4;
+        addr.labels[0] = i/4;
+        (*address2os)[avail_ct++] = AddrUnsPair(addr,i);
+    }
+
+    if (__kmp_affinity_verbose) {
+        __kmp_affinity_print_topology(*address2os, __kmp_avail_proc, depth, 2, 1, 0);
+    }
+
+    if (__kmp_affinity_gran_levels < 0) {
+        if (__kmp_affinity_gran > affinity_gran_thread) {
+            __kmp_affinity_gran_levels = 3;
+        }
+        else if (__kmp_affinity_gran > affinity_gran_core) {
+            __kmp_affinity_gran_levels = 2;
+        }
+        else if (__kmp_affinity_gran > affinity_gran_package) {
+            __kmp_affinity_gran_levels = 1;
+        }
+        else {
+            __kmp_affinity_gran_levels = 0;
+        }
+    }
+    return depth;
+}
+#endif // KMP_OS_CNK
 
 //
 // If we don't know how to retrieve the machine's processor topology, or
@@ -3413,6 +3497,22 @@ __kmp_aux_affinity_initialize(void)
             // Count the number of available processors.
             //
             unsigned i;
+
+#if KMP_OS_CNK
+            for (i = 0; i < KMP_CPU_SETSIZE; ++i) {
+                // Under CNK, threads don't really have affinity masks, but
+                // rather, are assigned to a single thread. As a result, when
+                // asked for the initial thread's affinity mask, you get back a
+                // mask with only one bit set (the first bit of those available
+                // to the process).
+                if (! KMP_CPU_ISSET((i/__kmp_xproc) * __kmp_xproc, fullMask)) {
+                    continue;
+                }
+
+                KMP_CPU_SET(i, fullMask);
+            }
+#endif
+
             __kmp_avail_proc = 0;
             for (i = 0; i < KMP_CPU_SETSIZE; ++i) {
                 if (! KMP_CPU_ISSET(i, fullMask)) {
@@ -3493,7 +3593,7 @@ __kmp_aux_affinity_initialize(void)
 
 # endif /* KMP_ARCH_X86 || KMP_ARCH_X86_64 */
 
-# if KMP_OS_LINUX
+# if (KMP_OS_LINUX && !KMP_OS_CNK)
 
         if (depth < 0) {
             if (__kmp_affinity_verbose) {
@@ -3535,6 +3635,15 @@ __kmp_aux_affinity_initialize(void)
         }
 
 # endif /* KMP_GROUP_AFFINITY */
+
+#if KMP_OS_CNK
+        if (depth < 0) {
+            depth = __kmp_affinity_create_bgq_map(&address2os, &msg_id);
+            if (depth > 0) {
+              KMP_ASSERT(address2os != NULL);
+            }
+        }
+#endif
 
         if (depth < 0) {
             if (__kmp_affinity_verbose && (msg_id != kmp_i18n_null)) {

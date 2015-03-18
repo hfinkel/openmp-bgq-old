@@ -188,6 +188,9 @@ __kmp_set_system_affinity( kmp_affin_mask_t const *mask, int abort_on_error )
         return 0;
     }
     int error = errno;
+// Under CNK, this call will fail for the initial process thread (the process
+// leader), so we ignore failures here.
+#if !KMP_OS_CNK
     if (abort_on_error) {
         __kmp_msg(
             kmp_ms_fatal,
@@ -196,6 +199,7 @@ __kmp_set_system_affinity( kmp_affin_mask_t const *mask, int abort_on_error )
             __kmp_msg_null
         );
     }
+#endif
     return error;
 }
 
@@ -244,6 +248,13 @@ __kmp_affinity_determine_capable(const char *env_var)
     //
     // Check and see if the OS supports thread affinity.
     //
+
+#if KMP_OS_CNK
+  // The BG/Q has 16 cores, 4 hardware threads per core, so we need a 64-bit
+  // mask (8 bytes).
+  __kmp_affin_mask_size = 8;
+  return;
+#endif
 
 # define KMP_CPU_SET_SIZE_LIMIT          (1024*1024)
 

@@ -42,7 +42,11 @@ class tsc_tick_count {
         const tsc_tick_count t1, const tsc_tick_count t0);
     };
 
+#if __has_builtin(__builtin_readcyclecounter)
+    tsc_tick_count() : my_count(static_cast<int64_t>(__builtin_readcyclecounter())) {};
+#else
     tsc_tick_count() : my_count(static_cast<int64_t>(__rdtsc())) {};
+#endif
     tsc_tick_count(int64_t value) : my_count(value) {};
     int64_t getValue() const { return my_count; }
     tsc_tick_count later (tsc_tick_count const other) const { 

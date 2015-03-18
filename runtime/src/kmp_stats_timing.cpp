@@ -31,6 +31,12 @@ double tsc_tick_count::tick_time()
     // pretty bad assumption of 1GHz clock for MIC
     return 1/((double)1000*1.e6);
 }
+# elif KMP_OS_CNK
+double tsc_tick_count::tick_time()
+{
+    // BG/Q runs at 1.6 GHz
+    return 1/((double)1600*1.e6);
+}
 # else
 #  include <string.h>
 // Extract the value from the CPUID information
