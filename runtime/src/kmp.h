@@ -509,7 +509,7 @@ extern size_t __kmp_affin_mask_size;
 typedef unsigned char kmp_affin_mask_t;
 
 // For big-endian systems, the bytes are swapped.
-#if KMP_ARCH_PPC64
+#if KMP_ARCH_PPC64_BE
 
 #  define _KMP_CPU_SET(i,mask)   (mask[__kmp_affin_mask_size - i/CHAR_BIT - 1] \
                                    |= (((kmp_affin_mask_t)1) << (i % CHAR_BIT)))
