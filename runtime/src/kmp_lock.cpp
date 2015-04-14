@@ -39,6 +39,17 @@
 
 #if KMP_OS_CNK
 #include <spi/include/kernel/memory.h>
+
+#if __cplusplus > 199711L
+#include <unordered_set>
+#define UNORDERED_SET std::unordered_set
+#else
+#include <tr1/unordered_set>
+#define UNORDERED_SET std::tr1::unordered_set
+#endif
+
+static UNORDERED_SET<size_t> bgq_sa_mem;
+kmp_bootstrap_lock_t bgq_sa_mem_lock;
 #endif
 
 /* Implement spin locks for internal library use.             */
@@ -1912,8 +1923,17 @@ __kmp_release_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
 void
 __kmp_init_bgq_sa_lock( kmp_bgq_sa_lock_t * lck )
 {
-    if (Kernel_L2AtomicsAllocate(lck, sizeof(kmp_bgq_sa_lock_t))) {
-      KMP_FATAL( MemoryAllocFailed );
+    // Keep track of what memory has already been properly mapped for atomic
+    // access to avoid expensive system calls.
+    __kmp_acquire_bootstrap_lock( & bgq_sa_mem_lock );
+    if (bgq_sa_mem.insert((size_t)lck).second) {
+      __kmp_release_bootstrap_lock( & bgq_sa_mem_lock );
+
+      if (Kernel_L2AtomicsAllocate(lck, sizeof(kmp_bgq_sa_lock_t))) {
+        KMP_FATAL( MemoryAllocFailed );
+      }
+    } else {
+      __kmp_release_bootstrap_lock( & bgq_sa_mem_lock );
     }
 
     L2_LockInit(&lck->lk.lock);
@@ -3752,6 +3772,10 @@ __kmp_init_dynamic_user_locks()
 #define expand_func(l) (kmp_lock_flags_t (*)(kmp_user_lock_p))__kmp_get_##l##_lock_flags
     init_lock_func(__kmp_indirect_get_flags, expand_func);
 #undef expand_func
+
+#if KMP_OS_CNK
+    __kmp_init_bootstrap_lock( & bgq_sa_mem_lock );
+#endif
 
     __kmp_init_user_locks = TRUE;
 }
