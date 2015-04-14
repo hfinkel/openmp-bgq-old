@@ -37,6 +37,10 @@
 # endif
 #endif
 
+#if KMP_OS_CNK
+#include <spi/include/kernel/memory.h>
+#endif
+
 /* Implement spin locks for internal library use.             */
 /* The algorithm implemented is Lamport's bakery lock [1974]. */
 
@@ -1815,6 +1819,262 @@ __kmp_set_queuing_lock_flags( kmp_queuing_lock_t *lck, kmp_lock_flags_t flags )
     lck->lk.flags = flags;
 }
 
+#if KMP_OS_CNK
+
+/* ------------------------------------------------------------------------ */
+/* BG/Q scalable atomics locks */
+
+static kmp_int32
+__kmp_get_bgq_sa_lock_owner( kmp_bgq_sa_lock_t *lck )
+{
+    return TCR_4( lck->lk.owner_id ) - 1;
+}
+
+static inline bool
+__kmp_is_bgq_sa_lock_nestable( kmp_bgq_sa_lock_t *lck )
+{
+    return lck->lk.depth_locked != -1;
+}
+
+void
+__kmp_acquire_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    L2_LockAcquire(&lck->lk.lock);
+    lck->lk.owner_id = gtid + 1;
+}
+
+static void
+__kmp_acquire_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_set_lock";
+    if ( __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockNestableUsedAsSimple, func );
+    }
+    if ( ( gtid >= 0 ) && ( __kmp_get_bgq_sa_lock_owner( lck ) == gtid ) ) {
+        KMP_FATAL( LockIsAlreadyOwned, func );
+    }
+
+    __kmp_acquire_bgq_sa_lock( lck, gtid );
+}
+
+int
+__kmp_test_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    if (L2_LockTryAcquire(&lck->lk.lock)) {
+      lck->lk.owner_id = gtid + 1;
+      return TRUE;
+    }
+
+    return FALSE;
+}
+
+static int
+__kmp_test_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_test_lock";
+    if ( __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockNestableUsedAsSimple, func );
+    }
+
+    return __kmp_test_bgq_sa_lock( lck, gtid );
+}
+
+void
+__kmp_release_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    int64_t distance = L2_LockThreadsInLine(&lck->lk.lock);
+    L2_LockRelease(&lck->lk.lock);
+
+    KMP_YIELD( (kmp_int32) distance
+      > (kmp_int32) (__kmp_avail_proc ? __kmp_avail_proc : __kmp_xproc) );
+}
+
+static void
+__kmp_release_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_unset_lock";
+    KMP_MB();  /* in case another processor initialized lock */
+    if ( __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockNestableUsedAsSimple, func );
+    }
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) == -1 ) {
+        KMP_FATAL( LockUnsettingFree, func );
+    }
+    if ( ( gtid >= 0 ) && ( __kmp_get_bgq_sa_lock_owner( lck ) >= 0 )
+      && ( __kmp_get_bgq_sa_lock_owner( lck ) != gtid ) ) {
+        KMP_FATAL( LockUnsettingSetByAnother, func );
+    }
+
+    lck->lk.owner_id = 0;
+    __kmp_release_bgq_sa_lock( lck, gtid );
+}
+
+void
+__kmp_init_bgq_sa_lock( kmp_bgq_sa_lock_t * lck )
+{
+    if (Kernel_L2AtomicsAllocate(lck, sizeof(kmp_bgq_sa_lock_t))) {
+      KMP_FATAL( MemoryAllocFailed );
+    }
+
+    L2_LockInit(&lck->lk.lock);
+    lck->lk.owner_id = 0;      // no thread owns the lock.
+    lck->lk.depth_locked = -1; // -1 => not a nested lock.
+}
+
+static void
+__kmp_init_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t * lck )
+{
+    __kmp_init_bgq_sa_lock( lck );
+}
+
+void
+__kmp_destroy_bgq_sa_lock( kmp_bgq_sa_lock_t *lck )
+{
+    L2_LockInit(&lck->lk.lock);
+    lck->lk.owner_id = 0;
+    lck->lk.depth_locked = -1;
+}
+
+static void
+__kmp_destroy_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck )
+{
+    char const * const func = "omp_destroy_lock";
+    if ( __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockNestableUsedAsSimple, func );
+    }
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) != -1 ) {
+        KMP_FATAL( LockStillOwned, func );
+    }
+
+    __kmp_destroy_bgq_sa_lock( lck );
+}
+
+//
+// nested BG/Q scalable atomics locks
+//
+
+void
+__kmp_acquire_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    KMP_DEBUG_ASSERT( gtid >= 0 );
+
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) == gtid ) {
+        lck->lk.depth_locked += 1;
+    }
+    else {
+        __kmp_acquire_bgq_sa_lock( lck, gtid );
+        lck->lk.depth_locked = 1;
+    }
+}
+
+static void
+__kmp_acquire_nested_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_set_nest_lock";
+    if ( ! __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockSimpleUsedAsNestable, func );
+    }
+
+    __kmp_acquire_nested_bgq_sa_lock( lck, gtid );
+}
+
+int
+__kmp_test_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    int retval;
+
+    KMP_DEBUG_ASSERT( gtid >= 0 );
+
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) == gtid ) {
+        retval = ++lck->lk.depth_locked;
+    }
+    else if ( !__kmp_test_bgq_sa_lock( lck, gtid ) ) {
+        retval = 0;
+    }
+    else {
+        KMP_MB();
+        retval = lck->lk.depth_locked = 1;
+    }
+
+    return retval;
+}
+
+static int
+__kmp_test_nested_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_test_nest_lock";
+    if ( ! __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockSimpleUsedAsNestable, func );
+    }
+
+    return __kmp_test_nested_bgq_sa_lock( lck, gtid );
+}
+
+void
+__kmp_release_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    KMP_DEBUG_ASSERT( gtid >= 0 );
+
+    KMP_MB();
+    if ( --(lck->lk.depth_locked) == 0 ) {
+        __kmp_release_bgq_sa_lock( lck, gtid );
+    }
+}
+
+static void
+__kmp_release_nested_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid )
+{
+    char const * const func = "omp_unset_nest_lock";
+    KMP_MB();  /* in case another processor initialized lock */
+    if ( ! __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockSimpleUsedAsNestable, func );
+    }
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) == -1 ) {
+        KMP_FATAL( LockUnsettingFree, func );
+    }
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) != gtid ) {
+        KMP_FATAL( LockUnsettingSetByAnother, func );
+    }
+
+    __kmp_release_nested_bgq_sa_lock( lck, gtid );
+}
+
+void
+__kmp_init_nested_bgq_sa_lock( kmp_bgq_sa_lock_t * lck )
+{
+    __kmp_init_bgq_sa_lock( lck );
+    lck->lk.depth_locked = 0; // >= 0 for nestable locks, -1 for simple locks
+}
+
+static void
+__kmp_init_nested_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t * lck )
+{
+    __kmp_init_nested_bgq_sa_lock( lck );
+}
+
+void
+__kmp_destroy_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck )
+{
+    __kmp_destroy_bgq_sa_lock( lck );
+    lck->lk.depth_locked = 0;
+}
+
+static void
+__kmp_destroy_nested_bgq_sa_lock_with_checks( kmp_bgq_sa_lock_t *lck )
+{
+    char const * const func = "omp_destroy_nest_lock";
+    if ( ! __kmp_is_bgq_sa_lock_nestable( lck ) ) {
+        KMP_FATAL( LockSimpleUsedAsNestable, func );
+    }
+    if ( __kmp_get_bgq_sa_lock_owner( lck ) != -1 ) {
+        KMP_FATAL( LockStillOwned, func );
+    }
+
+    __kmp_destroy_nested_bgq_sa_lock( lck );
+}
+
+#endif // KMP_OS_CNK
+
 #if KMP_USE_ADAPTIVE_LOCKS
 
 /*
@@ -3115,11 +3375,17 @@ kmp_lock_index_t __kmp_indirect_lock_table_next;
 // Size of indirect locks.
 static kmp_uint32 __kmp_indirect_lock_size[DYNA_NUM_I_LOCKS] = {
     sizeof(kmp_ticket_lock_t),      sizeof(kmp_queuing_lock_t),
+#if KMP_OS_CNK
+    sizeof(kmp_bgq_sa_lock_t),
+#endif
 #if KMP_USE_ADAPTIVE_LOCKS
     sizeof(kmp_adaptive_lock_t),
 #endif
     sizeof(kmp_drdpa_lock_t),
     sizeof(kmp_tas_lock_t),
+#if KMP_OS_CNK
+    sizeof(kmp_bgq_sa_lock_t),
+#endif
 #if DYNA_HAS_FUTEX
     sizeof(kmp_futex_lock_t),
 #endif
@@ -3300,7 +3566,11 @@ __kmp_test_indirect_lock_with_checks(kmp_dyna_lock_t * lock, kmp_int32 gtid)
     return DYNA_I_LOCK_FUNC(l, test)(l->lock, gtid);
 }
 
+#if KMP_OS_CNK
+kmp_dyna_lockseq_t __kmp_user_lock_seq = lockseq_bgq_sa;
+#else
 kmp_dyna_lockseq_t __kmp_user_lock_seq = lockseq_queuing;
+#endif
 
 // Initialize a hinted lock.
 void
@@ -3329,7 +3599,11 @@ __kmp_init_lock_hinted(void **lock, int hint)
         case kmp_lock_hint_contended:
         case kmp_lock_hint_nonspeculative:
         default:
+#if KMP_OS_CNK
+            seq = lockseq_bgq_sa;
+#else
             seq = lockseq_queuing;
+#endif
             break;
     }
     if (DYNA_IS_D_LOCK(seq)) {
@@ -3368,6 +3642,11 @@ __kmp_get_user_lock_owner(kmp_user_lock_p lck, kmp_uint32 seq)
         case lockseq_adaptive:
             return __kmp_get_queuing_lock_owner((kmp_queuing_lock_t *)lck);
 #endif
+#if KMP_OS_CNK
+        case lockseq_bgq_sa:
+        case lockseq_nested_bgq_sa:
+        return __kmp_get_bgq_sa_lock_owner((kmp_bgq_sa_lock_t *)lck);
+#endif
         case lockseq_drdpa:
         case lockseq_nested_drdpa:
             return __kmp_get_drdpa_lock_owner((kmp_drdpa_lock_t *)lck);
@@ -3390,7 +3669,11 @@ __kmp_init_nest_lock_hinted(void **lock, int hint)
         case kmp_lock_hint_contended:
         case kmp_lock_hint_nonspeculative:
         default:
+#if KMP_OS_CNK
+            seq = lockseq_nested_bgq_sa;
+#else
             seq = lockseq_nested_queuing;
+#endif
             break;
     }
     DYNA_INIT_I_LOCK(lock, seq);
@@ -3417,6 +3700,17 @@ __kmp_init_indirect_lock_table()
     table[locktag_drdpa]          = expand(drdpa);   \
     table[locktag_nested_ticket]  = expand(ticket);  \
     table[locktag_nested_queuing] = expand(queuing); \
+    table[locktag_nested_drdpa]   = expand(drdpa);   \
+}
+#elif KMP_OS_CNK
+# define init_lock_func(table, expand) {             \
+    table[locktag_ticket]         = expand(ticket);  \
+    table[locktag_queuing]        = expand(queuing); \
+    table[locktag_bgq_sa]         = expand(bgq_sa); \
+    table[locktag_drdpa]          = expand(drdpa);   \
+    table[locktag_nested_ticket]  = expand(ticket);  \
+    table[locktag_nested_queuing] = expand(queuing); \
+    table[locktag_nested_bgq_sa]  = expand(bgq_sa); \
     table[locktag_nested_drdpa]   = expand(drdpa);   \
 }
 #else
@@ -3708,6 +4002,46 @@ void __kmp_set_user_lock_vptrs( kmp_lock_kind_t user_lock_kind )
                ( &__kmp_set_queuing_lock_flags );
         }
         break;
+
+#if KMP_OS_CNK
+        case lk_bgq_sa: {
+            __kmp_base_user_lock_size = sizeof( kmp_base_bgq_sa_lock_t );
+            __kmp_user_lock_size = sizeof( kmp_bgq_sa_lock_t );
+
+            __kmp_get_user_lock_owner_ =
+              ( kmp_int32 ( * )( kmp_user_lock_p ) )
+              ( &__kmp_get_bgq_sa_lock_owner );
+
+            if ( __kmp_env_consistency_check ) {
+                KMP_BIND_USER_LOCK_WITH_CHECKS(bgq_sa);
+                KMP_BIND_NESTED_USER_LOCK_WITH_CHECKS(bgq_sa);
+            }
+            else {
+                KMP_BIND_USER_LOCK(bgq_sa);
+                KMP_BIND_NESTED_USER_LOCK(bgq_sa);
+            }
+
+            __kmp_destroy_user_lock_ =
+              ( void ( * )( kmp_user_lock_p ) )
+              ( &__kmp_destroy_bgq_sa_lock );
+
+             __kmp_is_user_lock_initialized_ =
+               ( int ( * )( kmp_user_lock_p ) ) NULL;
+
+             __kmp_get_user_lock_location_ =
+               ( const ident_t * ( * )( kmp_user_lock_p ) ) NULL;
+
+             __kmp_set_user_lock_location_ =
+               ( void ( * )( kmp_user_lock_p, const ident_t * ) ) NULL;
+
+             __kmp_get_user_lock_flags_ =
+               ( kmp_lock_flags_t ( * )( kmp_user_lock_p ) ) NULL;
+
+             __kmp_set_user_lock_flags_ =
+               ( void ( * )( kmp_user_lock_p, kmp_lock_flags_t ) ) NULL;
+        }
+        break;
+#endif // KMP_OS_CNK
 
 #if KMP_USE_ADAPTIVE_LOCKS
         case lk_adaptive: {

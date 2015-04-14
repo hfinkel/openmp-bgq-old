@@ -1617,6 +1617,9 @@ __kmpc_init_nest_lock( ident_t * loc, kmp_int32 gtid, void ** user_lock ) {
         case lockseq_ticket:    nested_seq = lockseq_nested_ticket;     break;
         case lockseq_queuing:   nested_seq = lockseq_nested_queuing;    break;
         case lockseq_drdpa:     nested_seq = lockseq_nested_drdpa;      break;
+#if KMP_OS_CNK
+        case lockseq_bgq_sa:    nested_seq = lockseq_nested_bgq_sa;     break;
+#endif
         default:                nested_seq = lockseq_nested_queuing;    break;
                                 // Use nested queuing lock for lock kinds without "nested" implementation.
     }

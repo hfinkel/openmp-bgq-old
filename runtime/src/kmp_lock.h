@@ -22,6 +22,10 @@
 #include "kmp_os.h"
 #include "kmp_debug.h"
 
+#if KMP_OS_CNK
+#include <spi/include/l2/lock.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif // __cplusplus
@@ -373,6 +377,43 @@ extern void __kmp_release_nested_queuing_lock( kmp_queuing_lock_t *lck, kmp_int3
 extern void __kmp_init_nested_queuing_lock( kmp_queuing_lock_t *lck );
 extern void __kmp_destroy_nested_queuing_lock( kmp_queuing_lock_t *lck );
 
+#if KMP_OS_CNK
+
+// ----------------------------------------------------------------------------
+// BG/Q scalable atomics locks.
+// ----------------------------------------------------------------------------
+
+struct kmp_base_bgq_sa_lock {
+    L2_Lock_t          lock;
+    volatile kmp_int32 owner_id;    // (gtid+1) of owning thread, 0 if unlocked
+    kmp_int32          depth_locked; // depth locked, for nested locks only
+};
+
+typedef struct kmp_base_bgq_sa_lock kmp_base_bgq_sa_lock_t;
+
+union kmp_bgq_sa_lock {
+    kmp_base_bgq_sa_lock_t lk;
+    kmp_lock_pool_t pool;   // make certain struct is large enough
+    double lk_align;        // use worst case alignment
+    char                    lk_pad[ KMP_PAD( kmp_base_bgq_sa_lock_t, CACHE_LINE ) ];
+};
+
+typedef union kmp_bgq_sa_lock kmp_bgq_sa_lock_t;
+
+extern void __kmp_acquire_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern int __kmp_test_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern void __kmp_release_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern void __kmp_init_bgq_sa_lock( kmp_bgq_sa_lock_t *lck );
+extern void __kmp_destroy_bgq_sa_lock( kmp_bgq_sa_lock_t *lck );
+
+extern void __kmp_acquire_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern int __kmp_test_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern void __kmp_release_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck, kmp_int32 gtid );
+extern void __kmp_init_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck );
+extern void __kmp_destroy_nested_bgq_sa_lock( kmp_bgq_sa_lock_t *lck );
+
+#endif // KMP_OS_CNK
+
 #if KMP_USE_ADAPTIVE_LOCKS
 
 // ----------------------------------------------------------------------------
@@ -594,6 +635,9 @@ enum kmp_lock_kind {
     lk_ticket,
     lk_queuing,
     lk_drdpa,
+#if KMP_OS_CNK
+    lk_bgq_sa,
+#endif // KMP_OS_CNK
 #if KMP_USE_ADAPTIVE_LOCKS
     lk_adaptive
 #endif // KMP_USE_ADAPTIVE_LOCKS
@@ -611,6 +655,9 @@ union kmp_user_lock {
     kmp_ticket_lock_t  ticket;
     kmp_queuing_lock_t queuing;
     kmp_drdpa_lock_t   drdpa;
+#if KMP_OS_CNK
+    kmp_bgq_sa_lock_t  bgq_sa;
+#endif // KMP_OS_CNK
 #if KMP_USE_ADAPTIVE_LOCKS
     kmp_adaptive_lock_t     adaptive;
 #endif // KMP_USE_ADAPTIVE_LOCKS
@@ -1060,6 +1107,10 @@ extern void __kmp_cleanup_user_locks();
 # if KMP_USE_ADAPTIVE_LOCKS
 #  define FOREACH_I_LOCK(m, a) m(ticket, a) m(queuing, a) m(adaptive, a) m(drdpa, a)   \
                                m(nested_tas, a)                    m(nested_ticket, a) \
+                               m(nested_queuing, a) m(nested_drdpa, a)
+# elif KMP_OS_CNK
+#  define FOREACH_I_LOCK(m, a) m(ticket, a) m(queuing, a) m(bgq_sa, a)   m(drdpa, a)   \
+                               m(nested_tas, a) m(nested_bgq_sa, a) m(nested_ticket, a) \
                                m(nested_queuing, a) m(nested_drdpa, a)
 # else
 #  define FOREACH_I_LOCK(m, a) m(ticket, a) m(queuing, a)                m(drdpa, a)   \

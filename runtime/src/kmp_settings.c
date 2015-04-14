@@ -4025,6 +4025,13 @@ __kmp_stg_parse_lock_kind( char const * name, char const * value, void * data ) 
         __kmp_user_lock_kind = lk_drdpa;
         DYNA_STORE_LOCK_SEQ(drdpa);
     }
+#if KMP_OS_CNK
+    else if ( __kmp_str_match( "bgq-sa", 1, value ) ||
+              __kmp_str_match( "bgq_sa", 1, value ) ) {
+        __kmp_user_lock_kind = lk_bgq_sa;
+        DYNA_STORE_LOCK_SEQ(bgq_sa);
+    }
+#endif // KMP_OS_CNK
 #if KMP_USE_ADAPTIVE_LOCKS
     else if ( __kmp_str_match( "adaptive", 1, value )  ) {
         if( __kmp_cpuinfo.rtm ) { // ??? Is cpuinfo available here?
@@ -4077,6 +4084,13 @@ __kmp_stg_print_lock_kind( kmp_str_buf_t * buffer, char const * name, void * dat
         case lk_drdpa:
         value = "drdpa";
         break;
+
+#if KMP_OS_CNK
+        case lk_bgq_sa:
+        value = "bgq-sa";
+        break;
+#endif
+
 #if KMP_USE_ADAPTIVE_LOCKS
         case lk_adaptive:
         value = "adaptive";
@@ -5066,7 +5080,11 @@ __kmp_env_initialize( char const * string ) {
     //
     if ( ! __kmp_init_user_locks ) {
         if ( __kmp_user_lock_kind == lk_default ) {
+#if KMP_OS_CNK
+            __kmp_user_lock_kind = lk_bgq_sa;
+#else
             __kmp_user_lock_kind = lk_queuing;
+#endif
         }
 #if KMP_USE_DYNAMIC_LOCK
         __kmp_init_dynamic_user_locks();
