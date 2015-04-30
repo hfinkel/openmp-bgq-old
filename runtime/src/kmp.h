@@ -108,6 +108,10 @@ class kmp_stats_list;
 # pragma weak clock_gettime
 #endif
 
+#if OMPT_SUPPORT
+#include "ompt-internal.h"
+#endif
+
 /*Select data placement in NUMA memory */
 #define NO_FIRST_TOUCH 0
 #define FIRST_TOUCH 1       /* Exploit SGI's first touch page placement algo */
@@ -2044,6 +2048,9 @@ struct kmp_taskdata {                                 /* aligned during dynamic 
     kmp_dephash_t *         td_dephash;           // Dependencies for children tasks are tracked from here
     kmp_depnode_t *         td_depnode;           // Pointer to graph node if this task has dependencies
 #endif
+#if OMPT_SUPPORT
+    ompt_task_info_t        ompt_task_info;
+#endif
 #if KMP_HAVE_QUAD
     _Quad                   td_dummy;             // Align structure 16-byte size since allocated just before kmp_task_t
 #else
@@ -2206,6 +2213,11 @@ typedef struct KMP_ALIGN_CACHE kmp_base_info {
     /* TODO the first serial team should actually be stored in the info_t
      * structure.  this will help reduce initial allocation overhead */
     KMP_ALIGN_CACHE kmp_team_p *th_serial_team; /*serialized team held in reserve*/
+
+#if OMPT_SUPPORT
+    ompt_thread_info_t      ompt_thread_info;
+#endif
+
 /* The following are also read by the master during reinit */
     struct common_table    *th_pri_common;
 
@@ -2340,6 +2352,12 @@ typedef struct KMP_ALIGN_CACHE kmp_base_team {
     int                      t_nproc;        // number of threads in team
     microtask_t              t_pkfn;
     launch_t                 t_invoke;       // procedure to launch the microtask
+
+#if OMPT_SUPPORT
+    ompt_team_info_t         ompt_team_info;
+    ompt_lw_taskteam_t      *ompt_serialized_team_info;
+#endif
+
 #if KMP_ARCH_X86 || KMP_ARCH_X86_64
     kmp_int8                 t_fp_control_saved;
     kmp_int8                 t_pad2b;
@@ -3023,11 +3041,17 @@ extern kmp_info_t * __kmp_allocate_thread( kmp_root_t *root,
                                            kmp_team_t *team, int tid);
 #if OMP_40_ENABLED
 extern kmp_team_t * __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
+#if OMPT_SUPPORT
+                                         ompt_parallel_id_t ompt_parallel_id,
+#endif
                                          kmp_proc_bind_t proc_bind,
                                          kmp_internal_control_t *new_icvs,
                                          int argc USE_NESTED_HOT_ARG(kmp_info_t *thr) );
 #else
 extern kmp_team_t * __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
+#if OMPT_SUPPORT
+                                         ompt_parallel_id_t ompt_parallel_id,
+#endif
                                          kmp_internal_control_t *new_icvs,
                                          int argc USE_NESTED_HOT_ARG(kmp_info_t *thr) );
 #endif // OMP_40_ENABLED
@@ -3062,7 +3086,11 @@ enum fork_context_e
     fork_context_last
 };
 extern int __kmp_fork_call( ident_t *loc, int gtid, enum fork_context_e fork_context,
-  kmp_int32 argc, microtask_t microtask, launch_t invoker,
+  kmp_int32 argc,
+#if OMPT_SUPPORT
+  void *unwrapped_task,
+#endif
+  microtask_t microtask, launch_t invoker,
 /* TODO: revert workaround for Intel(R) 64 tracker #96 */
 #if (KMP_ARCH_ARM || KMP_ARCH_X86_64 || KMP_ARCH_AARCH64) && KMP_OS_LINUX
                              va_list *ap
@@ -3109,6 +3137,9 @@ extern void __kmp_pop_current_task_from_thread( kmp_info_t *this_thr );
 extern kmp_task_t* __kmp_task_alloc( ident_t *loc_ref, kmp_int32 gtid,
   kmp_tasking_flags_t *flags, size_t sizeof_kmp_task_t, size_t sizeof_shareds,
   kmp_routine_entry_t task_entry );
+#if OMPT_SUPPORT
+extern void __kmp_task_init_ompt( kmp_taskdata_t * task, int tid );
+#endif
 extern void __kmp_init_implicit_task( ident_t *loc_ref, kmp_info_t *this_thr,
                   kmp_team_t *team, int tid, int set_curr_task );
 
@@ -3169,7 +3200,11 @@ extern void __kmp_clear_x87_fpu_status_word();
 
 #endif /* KMP_ARCH_X86 || KMP_ARCH_X86_64 */
 
-extern int __kmp_invoke_microtask( microtask_t pkfn, int gtid, int npr, int argc, void *argv[] );
+extern int __kmp_invoke_microtask( microtask_t pkfn, int gtid, int npr, int argc, void *argv[]
+#if OMPT_SUPPORT
+                                   , void **exit_frame_ptr
+#endif
+);
 
 
 /* ------------------------------------------------------------------------ */
