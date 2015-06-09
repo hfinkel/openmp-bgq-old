@@ -71,7 +71,9 @@ void __kmp_cleanup( void );
 
 static void __kmp_initialize_info( kmp_info_t *, kmp_team_t *, int tid, int gtid );
 static void __kmp_initialize_team( kmp_team_t * team, int new_nproc, kmp_internal_control_t * new_icvs, ident_t * loc );
+#if OMP_40_ENABLED && KMP_AFFINITY_SUPPORTED
 static void __kmp_partition_places( kmp_team_t *team );
+#endif
 static void __kmp_do_serial_initialize( void );
 void __kmp_fork_barrier( int gtid, int tid );
 void __kmp_join_barrier( int gtid );
@@ -83,7 +85,9 @@ static int __kmp_load_balance_nproc( kmp_root_t * root, int set_nproc );
 #endif
 
 static int __kmp_expand_threads(int nWish, int nNeed);
+#if KMP_OS_WINDOWS
 static int __kmp_unregister_root_other_thread( int gtid );
+#endif
 static void __kmp_unregister_library( void ); // called by __kmp_internal_end()
 static void __kmp_reap_thread( kmp_info_t * thread, int is_root );
 static kmp_info_t *__kmp_thread_pool_insert_pt = NULL;
@@ -325,7 +329,6 @@ __kmp_infinite_loop( void )
 void
 __kmp_print_storage_map_gtid( int gtid, void *p1, void *p2, size_t size, char const *format, ...) {
     char buffer[MAX_MESSAGE];
-    int node;
     va_list ap;
 
     va_start( ap, format);
@@ -333,6 +336,7 @@ __kmp_print_storage_map_gtid( int gtid, void *p1, void *p2, size_t size, char co
     __kmp_acquire_bootstrap_lock( & __kmp_stdio_lock );
     __kmp_vprintf( kmp_err, buffer, ap );
 #if KMP_PRINT_DATA_PLACEMENT
+    int node;
     if(gtid >= 0) {
         if(p1 <= p2 && (char*)p2 - (char*)p1 == size) {
             if( __kmp_storage_map_verbose ) {
@@ -553,7 +557,6 @@ __kmp_print_team_storage_map( const char *header, kmp_team_t *team, int team_id,
 
 static void __kmp_init_allocator() {}
 static void __kmp_fini_allocator() {}
-static void __kmp_fini_allocator_thread() {}
 
 /* ------------------------------------------------------------------------ */
 
@@ -729,8 +732,6 @@ __kmp_parallel_deo( int *gtid_ref, int *cid_ref, ident_t *loc_ref )
     }
 #ifdef BUILD_PARALLEL_ORDERED
     if( !team->t.t_serialized ) {
-        kmp_uint32  spins;
-
         KMP_MB();
         KMP_WAIT_YIELD(&team->t.t_ordered.dt.t_value, __kmp_tid_from_gtid( gtid ), KMP_EQ, NULL);
         KMP_MB();
@@ -1285,7 +1286,6 @@ __kmp_serialized_parallel(ident_t *loc, kmp_int32 global_tid)
             /* this serial team was already used
              * TODO increase performance by making this locks more specific */
             kmp_team_t *new_team;
-            int tid = this_thr->th.th_info.ds.ds_tid;
 
             __kmp_acquire_bootstrap_lock( &__kmp_forkjoin_lock );
 
@@ -2746,7 +2746,6 @@ __kmp_get_schedule( int gtid, kmp_sched_t * kind, int * chunk )
 {
     kmp_info_t     *thread;
     enum sched_type th_type;
-    int             i;
 
     KF_TRACE( 10, ("__kmp_get_schedule: thread %d\n", gtid ));
     KMP_DEBUG_ASSERT( __kmp_init_serial );
@@ -3116,7 +3115,6 @@ __kmp_initialize_root( kmp_root_t *root )
     int           f;
     kmp_team_t   *root_team;
     kmp_team_t   *hot_team;
-    size_t        disp_size, dispatch_size, bar_size;
     int           hot_team_max_nth;
     kmp_r_sched_t r_sched = __kmp_get_schedule_global(); // get current state of scheduling globals
     kmp_internal_control_t r_icvs = __kmp_get_global_icvs();
@@ -3964,6 +3962,7 @@ __kmp_unregister_root_current_thread( int gtid )
     __kmp_release_bootstrap_lock( &__kmp_forkjoin_lock );
 }
 
+#if KMP_OS_WINDOWS
 /* __kmp_forkjoin_lock must be already held
    Unregisters a root thread that is not the current thread.  Returns the number of
    __kmp_threads entries freed as a result.
@@ -3984,6 +3983,7 @@ __kmp_unregister_root_other_thread( int gtid )
     KC_TRACE( 10, ("__kmp_unregister_root_other_thread: T#%d unregistered\n", gtid ));
     return r;
 }
+#endif
 
 #if KMP_DEBUG
 void __kmp_task_info() {
@@ -4763,8 +4763,6 @@ __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
     KMP_TIME_BLOCK(KMP_allocate_team);
     int f;
     kmp_team_t *team;
-    char *ptr;
-    size_t size;
     int use_hot_team = ! root->r.r_active;
     int level = 0;
 
@@ -5908,8 +5906,6 @@ __kmp_internal_end(void)
 void
 __kmp_internal_end_library( int gtid_req )
 {
-    int i;
-
     /* if we have already cleaned up, don't try again, it wouldn't be pretty */
     /* this shouldn't be a race condition because __kmp_internal_end() is the
      * only place to clear __kmp_serial_init */
@@ -7508,8 +7504,6 @@ __kmp_determine_reduction_method( ident_t *loc, kmp_int32 global_tid,
 
     int team_size;
 
-    int teamsize_cutoff = 4;
-
     KMP_DEBUG_ASSERT( loc );    // it would be nice to test ( loc != 0 )
     KMP_DEBUG_ASSERT( lck );    // it would be nice to test ( lck != 0 )
 
@@ -7532,6 +7526,9 @@ __kmp_determine_reduction_method( ident_t *loc, kmp_int32 global_tid,
         #if KMP_ARCH_X86_64 || KMP_ARCH_PPC64 || KMP_ARCH_AARCH64
 
             #if KMP_OS_LINUX || KMP_OS_FREEBSD || KMP_OS_WINDOWS || KMP_OS_DARWIN
+
+	    int teamsize_cutoff = 4;
+
 #if KMP_ARCH_X86_64 && (KMP_OS_LINUX || KMP_OS_WINDOWS)
                 if( __kmp_mic_type != non_mic ) {
                     teamsize_cutoff = 8;

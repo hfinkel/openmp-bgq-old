@@ -1237,7 +1237,8 @@ __kmp_barrier(enum barrier_type bt, int gtid, int is_split, size_t reduce_size,
                 }
 #endif
 
-                kmp_task_team_t * task_team = this_thr->th.th_task_team;
+                kmp_task_team_t * task_team;
+                task_team = this_thr->th.th_task_team;
                 KMP_DEBUG_ASSERT(task_team->tt.tt_found_proxy_tasks == TRUE);
                 __kmp_task_team_wait(this_thr, team
                                                USE_ITT_BUILD_ARG(itt_sync_obj));
@@ -1685,7 +1686,6 @@ void
 __kmp_setup_icv_copy(kmp_team_t *team, int new_nproc, kmp_internal_control_t *new_icvs, ident_t *loc )
 {
     KMP_TIME_BLOCK(KMP_setup_icv_copy);
-    int f;
 
     KMP_DEBUG_ASSERT(team && new_nproc && new_icvs);
     KMP_DEBUG_ASSERT((!TCR_4(__kmp_init_parallel)) || new_icvs->nproc);
@@ -1708,7 +1708,7 @@ __kmp_setup_icv_copy(kmp_team_t *team, int new_nproc, kmp_internal_control_t *ne
     // Copy the ICVs to each of the non-master threads.  This takes O(nthreads) time.
     ngo_load(new_icvs);
     KMP_DEBUG_ASSERT(team->t.t_threads[0]);  // The threads arrays should be allocated at this point
-    for (f=1; f<new_nproc; ++f) { // Skip the master thread
+    for (int f=1; f<new_nproc; ++f) { // Skip the master thread
         // TODO: GEH - pass in better source location info since usually NULL here
         KF_TRACE(10, ("__kmp_setup_icv_copy: LINEAR: T#%d this_thread=%p team=%p\n",
                       f, team->t.t_threads[f], team));

@@ -4228,7 +4228,6 @@ __kmp_lock_table_insert( kmp_user_lock_p lck )
     if ( __kmp_user_lock_table.used >= __kmp_user_lock_table.allocated ) {
         kmp_lock_index_t size;
         kmp_user_lock_p *table;
-        kmp_lock_index_t i;
         // Reallocate lock table.
         if ( __kmp_user_lock_table.allocated == 0 ) {
             size = 1024;
@@ -4337,8 +4336,6 @@ __kmp_user_lock_allocate( void **user_lock, kmp_int32 gtid,
 void
 __kmp_user_lock_free( void **user_lock, kmp_int32 gtid, kmp_user_lock_p lck )
 {
-    kmp_lock_pool_t * lock_pool;
-
     KMP_DEBUG_ASSERT( user_lock != NULL );
     KMP_DEBUG_ASSERT( lck != NULL );
 

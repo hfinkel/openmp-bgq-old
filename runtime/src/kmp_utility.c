@@ -30,7 +30,9 @@ static const char *unknown = "unknown";
 /* the debugging package has not been initialized yet, and only "0" will print   */
 /* debugging output since the environment variables have not been read.          */
 
+#ifdef KMP_DEBUG
 static int trace_level = 5;
+#endif
 
 /*
  * LOG_ID_BITS  = ( 1 + floor( log_2( max( log_per_phy - 1, 1 ))))
@@ -78,7 +80,6 @@ __kmp_get_logical_id( int log_per_phy, int apic_id )
 {
    unsigned current_bit;
    int bits_seen;
-   unsigned mask;
 
    if (log_per_phy <= 1) return ( 0 );
 
@@ -136,7 +137,9 @@ __kmp_query_cpuid( kmp_cpuinfo_t *p )
     struct kmp_cpuid buf;
     int max_arg;
     int log_per_phy;
+#ifdef KMP_DEBUG
     int cflush_size;
+#endif
 
     p->initialized = 1;
 
