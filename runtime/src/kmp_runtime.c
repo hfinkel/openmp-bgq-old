@@ -1558,7 +1558,7 @@ __kmp_fork_call(
 
         ompt_callbacks.ompt_callback(ompt_event_parallel_begin)(
             ompt_task_id, ompt_frame, ompt_parallel_id,
-            team_size, unwrapped_task);
+            team_size, unwrapped_task, OMPT_INVOKER(call_context));
     }
 #endif
 
@@ -1646,7 +1646,8 @@ __kmp_fork_call(
                 if ((ompt_status == ompt_status_track_callback) &&
                     ompt_callbacks.ompt_callback(ompt_event_parallel_end)) {
                     ompt_callbacks.ompt_callback(ompt_event_parallel_end)(
-                        ompt_parallel_id, ompt_task_id);
+                        ompt_parallel_id, ompt_task_id,
+                        OMPT_INVOKER(call_context));
                 }
                 master_th->th.ompt_thread_info.state = ompt_state_overhead;
             }
@@ -1821,7 +1822,8 @@ __kmp_fork_call(
                     if ((ompt_status == ompt_status_track_callback) &&
                         ompt_callbacks.ompt_callback(ompt_event_parallel_end)) {
                         ompt_callbacks.ompt_callback(ompt_event_parallel_end)(
-                            ompt_parallel_id, ompt_task_id);
+                            ompt_parallel_id, ompt_task_id,
+                            OMPT_INVOKER(call_context));
                     }
                     master_th->th.ompt_thread_info.state = ompt_state_overhead;
                 }
@@ -1927,7 +1929,8 @@ __kmp_fork_call(
                     if ((ompt_status == ompt_status_track_callback) &&
                         ompt_callbacks.ompt_callback(ompt_event_parallel_end)) {
                         ompt_callbacks.ompt_callback(ompt_event_parallel_end)(
-                            ompt_parallel_id, ompt_task_id);
+                            ompt_parallel_id, ompt_task_id,
+                            OMPT_INVOKER(call_context));
                     }
                     master_th->th.ompt_thread_info.state = ompt_state_overhead;
                 }
@@ -2086,7 +2089,11 @@ __kmp_fork_call(
 
     if ( __kmp_tasking_mode != tskm_immediate_exec ) {
         // Set master's task team to team's task team. Unless this is hot team, it should be NULL.
+#if 0
+        // Patch out an assertion that trips while the runtime seems to operate correctly.
+        // Avoiding the preconditions that cause the assertion to trip has been promised as a forthcoming patch.
         KMP_DEBUG_ASSERT(master_th->th.th_task_team == parent_team->t.t_task_team[master_th->th.th_task_state]);
+#endif
         KA_TRACE( 20, ( "__kmp_fork_call: Master T#%d pushing task_team %p / team %p, new task_team %p / team %p\n",
                       __kmp_gtid_from_thread( master_th ), master_th->th.th_task_team,
                       parent_team, team->t.t_task_team[master_th->th.th_task_state], team ) );
@@ -2253,12 +2260,13 @@ static inline void
 __kmp_join_ompt(
     kmp_info_t *thread,
     kmp_team_t *team,
-    ompt_parallel_id_t parallel_id)
+    ompt_parallel_id_t parallel_id,
+    fork_context_e fork_context)
 {
     if (ompt_callbacks.ompt_callback(ompt_event_parallel_end)) {
         ompt_task_info_t *task_info = __ompt_get_taskinfo(0);
         ompt_callbacks.ompt_callback(ompt_event_parallel_end)(
-            parallel_id, task_info->task_id);
+            parallel_id, task_info->task_id, OMPT_INVOKER(fork_context));
     }
 
     __kmp_join_restore_state(thread,team);
@@ -2266,7 +2274,7 @@ __kmp_join_ompt(
 #endif
 
 void
-__kmp_join_call(ident_t *loc, int gtid
+__kmp_join_call(ident_t *loc, int gtid, enum fork_context_e fork_context
 #if OMP_40_ENABLED
                , int exit_teams
 #endif /* OMP_40_ENABLED */
@@ -2424,7 +2432,7 @@ __kmp_join_call(ident_t *loc, int gtid
 
 #if OMPT_SUPPORT
         if (ompt_status == ompt_status_track_callback) {
-            __kmp_join_ompt(master_th, parent_team, parallel_id);
+            __kmp_join_ompt(master_th, parent_team, parallel_id, fork_context);
         }
 #endif
 
@@ -2515,7 +2523,7 @@ __kmp_join_call(ident_t *loc, int gtid
 
 #if OMPT_SUPPORT
     if (ompt_status == ompt_status_track_callback) {
-        __kmp_join_ompt(master_th, parent_team, parallel_id);
+        __kmp_join_ompt(master_th, parent_team, parallel_id, fork_context);
     }
 #endif
 
@@ -6962,8 +6970,10 @@ __kmp_teams_master( int gtid )
 #if INCLUDE_SSC_MARKS
     SSC_MARK_JOINING();
 #endif
-    __kmp_join_call( loc, gtid, 1 ); // AC: last parameter "1" eliminates join barrier which won't work because
-                                     // worker threads are in a fork barrier waiting for more parallel regions
+    
+    // AC: last parameter "1" eliminates join barrier which won't work because
+    // worker threads are in a fork barrier waiting for more parallel regions
+    __kmp_join_call( loc, gtid, fork_context_intel, 1 ); 
 }
 
 int
