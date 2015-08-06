@@ -33,11 +33,17 @@ build/%.o: src/%.cpp build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.
 build/%.o: src/%.c build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
 	${CC} -x c++ -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<
 
+build/%.o: src/%.s build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
+	${CC} -x assembler-with-cpp -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<
+
 build/%-pic.o: src/%.cpp build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
 	${CXX} -fPIC -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<
 
 build/%-pic.o: src/%.c build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
 	${CC} -fPIC -x c++ -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<
+
+build/%-pic.o: src/%.s build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
+	${CC} -fPIC -x assembler-with-cpp -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<
 
 OBJS =	build/kmp_alloc.o \
 	build/kmp_affinity.o \
@@ -72,6 +78,7 @@ OBJS =	build/kmp_alloc.o \
 	build/kmp_wait_release.o \
 	build/kmp_lock.o \
 	build/ompt-general.o \
+	build/z_Linux_asm.o \
 	build/z_Linux_util.o
 
 OBJS_PIC = $(OBJS:.o=-pic.o)
