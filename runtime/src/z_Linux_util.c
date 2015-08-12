@@ -1699,7 +1699,7 @@ __kmp_suspend_uninitialize_thread( kmp_info_t *th )
 template <class C>
 static inline void __kmp_suspend_template( int th_gtid, C *flag )
 {
-    KMP_TIME_BLOCK(USER_suspend);
+    KMP_TIME_DEVELOPER_BLOCK(USER_suspend);
     kmp_info_t *th = __kmp_threads[th_gtid];
     int status;
     typename C::flag_t old_spin;
@@ -1837,6 +1837,7 @@ void __kmp_suspend_oncore(int th_gtid, kmp_flag_oncore *flag) {
 template <class C>
 static inline void __kmp_resume_template( int target_gtid, C *flag )
 {
+    KMP_TIME_DEVELOPER_BLOCK(USER_resume);
     kmp_info_t *th = __kmp_threads[target_gtid];
     int status;
 
@@ -1911,7 +1912,6 @@ void __kmp_resume_oncore(int target_gtid, kmp_flag_oncore *flag) {
 void
 __kmp_resume_monitor()
 {
-    KMP_TIME_BLOCK(USER_resume);
     int status;
 #ifdef KMP_DEBUG
     int gtid = TCR_4(__kmp_init_gtid) ? __kmp_get_gtid() : -1;
