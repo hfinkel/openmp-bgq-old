@@ -4867,7 +4867,8 @@ __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
 
 #if OMP_40_ENABLED
 # if KMP_AFFINITY_SUPPORTED
-            if ( team->t.t_proc_bind == new_proc_bind ) {
+            if ( ( team->t.t_size_changed == 0 )
+              && ( team->t.t_proc_bind == new_proc_bind ) ) {
                 KA_TRACE( 200, ("__kmp_allocate_team: reusing hot team #%d bindings: proc_bind = %d, partition = [%d,%d]\n",
                   team->t.t_id, new_proc_bind, team->t.t_first_place,
                   team->t.t_last_place ) );
@@ -7642,7 +7643,9 @@ __kmp_determine_reduction_method( ident_t *loc, kmp_int32 global_tid,
 
     // KMP_FORCE_REDUCTION
 
-    if( __kmp_force_reduction_method != reduction_method_not_defined ) {
+    // If the team is serialized (team_size == 1), ignore the forced reduction
+    // method and stay with the unsynchronized method (empty_reduce_block)
+    if( __kmp_force_reduction_method != reduction_method_not_defined && team_size != 1) {
 
         PACKED_REDUCTION_METHOD_T forced_retval;
 
@@ -7652,9 +7655,6 @@ __kmp_determine_reduction_method( ident_t *loc, kmp_int32 global_tid,
         {
             case critical_reduce_block:
                 KMP_ASSERT( lck );              // lck should be != 0
-                if( team_size <= 1 ) {
-                    forced_retval = empty_reduce_block;
-                }
                 break;
 
             case atomic_reduce_block:
