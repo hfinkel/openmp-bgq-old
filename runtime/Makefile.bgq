@@ -1,10 +1,7 @@
 date := $(shell date '+%Y%m%d')
 
-FEATURE_FLAGS = -DOMP_40_ENABLED=1 -DOMP_30_ENABLED=1 -DOMP_VERSION=201107 -DKMP_VERSION_MAJOR=5 \
-		-DCACHE_LINE=64 -DKMP_ADJUST_BLOCKTIME=1 -DBUILD_I8 -DKMP_USE_ADAPTIVE_LOCKS=0 \
-		-DKMP_DEBUG_ADAPTIVE_LOCKS=0 -DINTEL_NO_ITTNOTIFY_API -DKMP_VERSION_MINOR=0 -DKMP_VERSION_BUILD=0 \
-		-DKMP_LIBRARY_FILE=\"libiomp5.so\" -D_KMP_BUILD_TIME="\"$(date)\"" -DKMP_GOMP_COMPAT \
-		-DOMPT_SUPPORT -DOMPT_BLAME -DOMPT_TRACE
+FEATURE_FLAGS = -DOMP_VERSION=201107 -DBUILD_I8 -DKMP_VERSION_BUILD=0 \
+		-D_KMP_BUILD_TIME="\"$(date)\""
 
 CPPFLAGS = ${FEATURE_FLAGS} -D__float128='long double'
 
@@ -18,14 +15,14 @@ build/.dir:
 	touch build/.dir
 
 build/omp.h:
-	perl tools/expand-vars.pl --strict $$(echo $(FEATURE_FLAGS) | sed 's/-D/-D /g') \
-	  -D KMP_BUILD_DATE=$(date) -D Revision=Revision -D Date=Date \
-	  src/include/40/omp.h.var build/omp.h
+	cp -f src/include/40/omp.h.var build/omp.h
+	sed -i 's/@LIBOMP_VERSION_MAJOR@/5/g' build/omp.h
+	sed -i 's/@LIBOMP_VERSION_MINOR@/0/g' build/omp.h
+	sed -i 's/@LIBOMP_VERSION_BUILD@/0/g' build/omp.h
+	sed -i 's/@LIBOMP_BUILD_DATE@/$(date)/g' build/omp.h
 
 build/ompt.h:
-	perl tools/expand-vars.pl --strict $$(echo $(FEATURE_FLAGS) | sed 's/-D/-D /g') \
-	  -D KMP_BUILD_DATE=$(date) -D Revision=Revision -D Date=Date \
-	  src/include/40/ompt.h.var build/ompt.h
+	cp -f src/include/40/ompt.h.var build/ompt.h
 
 build/%.o: src/%.cpp build/kmp_i18n_id.inc build/kmp_i18n_default.inc build/omp.h build/ompt.h
 	${CXX} -c ${CPPFLAGS} -g -O3 -Isrc -Ibuild -o $@ $<

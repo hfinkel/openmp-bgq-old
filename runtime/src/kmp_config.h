@@ -61,15 +61,15 @@
 #endif
 
 #define KMP_DYNAMIC_LIB 1
-#define KMP_NESTED_HOT_TEAMS 1
+// #define KMP_NESTED_HOT_TEAMS 1
 #define KMP_ADJUST_BLOCKTIME 1
 #define BUILD_PARALLEL_ORDERED 1
 #define KMP_ASM_INTRINS 1
-#define USE_ITT_BUILD 1
+// #define USE_ITT_BUILD 1
 #define INTEL_ITTNOTIFY_PREFIX __kmp_itt_
-#if ! KMP_MIC
+// #if ! KMP_MIC
 # define USE_LOAD_BALANCE 1
-#endif
+// #endif
 #if ! (KMP_OS_WINDOWS || KMP_OS_DARWIN)
 # define KMP_TDATA_GTID 1
 #endif
