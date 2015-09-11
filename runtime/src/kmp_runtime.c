@@ -1102,7 +1102,7 @@ __kmp_fork_team_threads( kmp_root_t *root, kmp_team_t *team,
             KMP_DEBUG_ASSERT( thr );
             KMP_DEBUG_ASSERT( thr->th.th_team == team );
             /* align team and thread arrived states */
-            KA_TRACE( 20, ("__kmp_fork_team_threads: T#%d(%d:%d) init arrived T#%d(%d:%d) join =%u, plain=%u\n",
+            KA_TRACE( 20, ("__kmp_fork_team_threads: T#%d(%d:%d) init arrived T#%d(%d:%d) join =%llu, plain=%llu\n",
                             __kmp_gtid_from_tid( 0, team ), team->t.t_id, 0,
                             __kmp_gtid_from_tid( i, team ), team->t.t_id, i,
                             team->t.t_bar[ bs_forkjoin_barrier ].b_arrived,
@@ -3988,8 +3988,13 @@ __kmp_unregister_root_current_thread( int gtid )
    kmp_task_team_t *   task_team = thread->th.th_task_team;
 
    // we need to wait for the proxy tasks before finishing the thread
-   if ( task_team != NULL && task_team->tt.tt_found_proxy_tasks )
+   if ( task_team != NULL && task_team->tt.tt_found_proxy_tasks ) {
+#if OMPT_SUPPORT
+        // the runtime is shutting down so we won't report any events
+        thread->th.ompt_thread_info.state = ompt_state_undefined;
+#endif
         __kmp_task_team_wait(thread, team, NULL );
+   }
 #endif
 
     __kmp_reset_root(gtid, root);
@@ -5052,7 +5057,7 @@ __kmp_allocate_team( kmp_root_t *root, int new_nproc, int max_nproc,
                 KMP_DEBUG_ASSERT( new_worker );
                 team->t.t_threads[ f ] = new_worker;
 
-                KA_TRACE( 20, ("__kmp_allocate_team: team %d init T#%d arrived: join=%u, plain=%u\n",
+                KA_TRACE( 20, ("__kmp_allocate_team: team %d init T#%d arrived: join=%llu, plain=%llu\n",
                                 team->t.t_id, __kmp_gtid_from_tid( f, team ), team->t.t_id, f,
                                 team->t.t_bar[bs_forkjoin_barrier].b_arrived,
                                 team->t.t_bar[bs_plain_barrier].b_arrived ) );
@@ -7288,6 +7293,7 @@ __kmp_cleanup( void )
 #if KMP_AFFINITY_SUPPORTED
         __kmp_affinity_uninitialize();
 #endif /* KMP_AFFINITY_SUPPORTED */
+        __kmp_cleanup_hierarchy();
         TCW_4(__kmp_init_middle, FALSE);
     }
 
