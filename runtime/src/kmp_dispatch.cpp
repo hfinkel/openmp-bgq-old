@@ -1209,7 +1209,7 @@ __kmp_dispatch_init(
     #endif // ( KMP_STATIC_STEAL_ENABLED && USE_STEALING )
 
 #if OMPT_SUPPORT && OMPT_TRACE
-    if ((ompt_status == ompt_status_track_callback) &&
+    if (ompt_enabled &&
         ompt_callbacks.ompt_callback(ompt_event_loop_begin)) {
         ompt_team_info_t *team_info = __ompt_get_teaminfo(0, NULL);
         ompt_task_info_t *task_info = __ompt_get_taskinfo(0);
@@ -1373,7 +1373,7 @@ __kmp_dispatch_finish_chunk( int gtid, ident_t *loc )
 #if OMPT_SUPPORT && OMPT_TRACE
 #define OMPT_LOOP_END                                                          \
     if (status == 0) {                                                         \
-        if ((ompt_status == ompt_status_track_callback) &&                     \
+        if (ompt_enabled &&                     \
             ompt_callbacks.ompt_callback(ompt_event_loop_end)) {               \
             ompt_team_info_t *team_info = __ompt_get_teaminfo(0, NULL);        \
             ompt_task_info_t *task_info = __ompt_get_taskinfo(0);              \
@@ -2224,9 +2224,9 @@ __kmp_dist_get_bounds(
         }
     }
     th = __kmp_threads[gtid];
-    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     team = th->th.th_team;
     #if OMP_40_ENABLED
+    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     nteams = th->th.th_teams_size.nteams;
     #endif
     team_id = team->t.t_master_tid;

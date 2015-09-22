@@ -93,7 +93,7 @@ class kmp_stats_list;
 #endif
 #include "kmp_i18n.h"
 
-#define KMP_HANDLE_SIGNALS (KMP_OS_LINUX || KMP_OS_FREEBSD || KMP_OS_WINDOWS || KMP_OS_DARWIN)
+#define KMP_HANDLE_SIGNALS (KMP_OS_UNIX || KMP_OS_WINDOWS)
 
 #include "kmp_wrapper_malloc.h"
 #if KMP_OS_UNIX
@@ -995,6 +995,10 @@ extern int __kmp_place_core_offset;
 #  define KMP_NEXT_WAIT   512U          /* susequent number of spin-tests */
 #elif KMP_OS_FREEBSD
 /* TODO: tune for KMP_OS_FREEBSD */
+#  define KMP_INIT_WAIT  1024U          /* initial number of spin-tests   */
+#  define KMP_NEXT_WAIT   512U          /* susequent number of spin-tests */
+#elif KMP_OS_NETBSD
+/* TODO: tune for KMP_OS_NETBSD */
 #  define KMP_INIT_WAIT  1024U          /* initial number of spin-tests   */
 #  define KMP_NEXT_WAIT   512U          /* susequent number of spin-tests */
 #endif

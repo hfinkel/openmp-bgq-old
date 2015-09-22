@@ -146,7 +146,7 @@ __kmp_for_static_init(
         KE_TRACE( 10, ("__kmpc_for_static_init: T#%d return\n", global_tid ) );
 
 #if OMPT_SUPPORT && OMPT_TRACE
-        if ((ompt_status == ompt_status_track_callback) &&
+        if (ompt_enabled &&
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)) {
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)(
                 team_info->parallel_id, task_info->task_id,
@@ -192,7 +192,7 @@ __kmp_for_static_init(
         KE_TRACE( 10, ("__kmpc_for_static_init: T#%d return\n", global_tid ) );
 
 #if OMPT_SUPPORT && OMPT_TRACE
-        if ((ompt_status == ompt_status_track_callback) &&
+        if (ompt_enabled &&
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)) {
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)(
                 team_info->parallel_id, task_info->task_id,
@@ -220,7 +220,7 @@ __kmp_for_static_init(
         KE_TRACE( 10, ("__kmpc_for_static_init: T#%d return\n", global_tid ) );
 
 #if OMPT_SUPPORT && OMPT_TRACE
-        if ((ompt_status == ompt_status_track_callback) &&
+        if (ompt_enabled &&
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)) {
             ompt_callbacks.ompt_callback(ompt_event_loop_begin)(
                 team_info->parallel_id, task_info->task_id,
@@ -352,7 +352,7 @@ __kmp_for_static_init(
     KE_TRACE( 10, ("__kmpc_for_static_init: T#%d return\n", global_tid ) );
 
 #if OMPT_SUPPORT && OMPT_TRACE
-    if ((ompt_status == ompt_status_track_callback) &&
+    if (ompt_enabled &&
         ompt_callbacks.ompt_callback(ompt_event_loop_begin)) {
         ompt_callbacks.ompt_callback(ompt_event_loop_begin)(
             team_info->parallel_id, task_info->task_id, team_info->microtask);
@@ -424,10 +424,10 @@ __kmp_dist_for_static_init(
     }
     tid = __kmp_tid_from_gtid( gtid );
     th = __kmp_threads[gtid];
-    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     nth = th->th.th_team_nproc;
     team = th->th.th_team;
     #if OMP_40_ENABLED
+    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     nteams = th->th.th_teams_size.nteams;
     #endif
     team_id = team->t.t_master_tid;
@@ -662,9 +662,9 @@ __kmp_team_static_init(
         }
     }
     th = __kmp_threads[gtid];
-    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     team = th->th.th_team;
     #if OMP_40_ENABLED
+    KMP_DEBUG_ASSERT(th->th.th_teams_microtask);   // we are in the teams construct
     nteams = th->th.th_teams_size.nteams;
     #endif
     team_id = team->t.t_master_tid;

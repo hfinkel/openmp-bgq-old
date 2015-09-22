@@ -735,9 +735,11 @@ __kmp_hierarchical_barrier_gather(enum barrier_type bt, kmp_info_t *this_thr,
     register kmp_uint64 new_state;
 
     int level = team->t.t_level;
+#if OMP_40_ENABLED
     if (other_threads[0]->th.th_teams_microtask)    // are we inside the teams construct?
         if (this_thr->th.th_teams_size.nteams > 1)
             ++level; // level was not increased in teams construct for team_of_masters
+#endif
     if (level == 1) thr_bar->use_oncore_barrier = 1;
     else thr_bar->use_oncore_barrier = 0; // Do not use oncore barrier when nested
 
@@ -908,12 +910,14 @@ __kmp_hierarchical_barrier_release(enum barrier_type bt, kmp_info_t *this_thr, i
     }
 
     int level = team->t.t_level;
+#if OMP_40_ENABLED
     if (team->t.t_threads[0]->th.th_teams_microtask ) {    // are we inside the teams construct?
         if (team->t.t_pkfn != (microtask_t)__kmp_teams_master && this_thr->th.th_teams_level == level)
             ++level; // level was not increased in teams construct for team_of_workers
         if( this_thr->th.th_teams_size.nteams > 1 )
             ++level; // level was not increased in teams construct for team_of_masters
     }
+#endif
     if (level == 1) thr_bar->use_oncore_barrier = 1;
     else thr_bar->use_oncore_barrier = 0; // Do not use oncore barrier when nested
     nproc = this_thr->th.th_team_nproc;
@@ -1053,25 +1057,23 @@ __kmp_barrier(enum barrier_type bt, int gtid, int is_split, size_t reduce_size,
                   gtid, __kmp_team_from_gtid(gtid)->t.t_id, __kmp_tid_from_gtid(gtid)));
 
 #if OMPT_SUPPORT
-    if (ompt_status & ompt_status_track) {
+    if (ompt_enabled) {
 #if OMPT_BLAME
-        if (ompt_status == ompt_status_track_callback) {
-            my_task_id = team->t.t_implicit_task_taskdata[tid].ompt_task_info.task_id;
-            my_parallel_id = team->t.ompt_team_info.parallel_id;
+        my_task_id = team->t.t_implicit_task_taskdata[tid].ompt_task_info.task_id;
+        my_parallel_id = team->t.ompt_team_info.parallel_id;
 
 #if OMPT_TRACE
-            if (this_thr->th.ompt_thread_info.state == ompt_state_wait_single) {
-                if (ompt_callbacks.ompt_callback(ompt_event_single_others_end)) {
-                    ompt_callbacks.ompt_callback(ompt_event_single_others_end)(
-                        my_parallel_id, my_task_id);
-                }
-            }
-#endif
-            if (ompt_callbacks.ompt_callback(ompt_event_barrier_begin)) {
-                ompt_callbacks.ompt_callback(ompt_event_barrier_begin)(
+        if (this_thr->th.ompt_thread_info.state == ompt_state_wait_single) {
+            if (ompt_callbacks.ompt_callback(ompt_event_single_others_end)) {
+                ompt_callbacks.ompt_callback(ompt_event_single_others_end)(
                     my_parallel_id, my_task_id);
             }
-        } 
+        }
+#endif
+        if (ompt_callbacks.ompt_callback(ompt_event_barrier_begin)) {
+            ompt_callbacks.ompt_callback(ompt_event_barrier_begin)(
+                my_parallel_id, my_task_id);
+        }
 #endif
         // It is OK to report the barrier state after the barrier begin callback.
         // According to the OMPT specification, a compliant implementation may
@@ -1276,10 +1278,9 @@ __kmp_barrier(enum barrier_type bt, int gtid, int is_split, size_t reduce_size,
                   gtid, __kmp_team_from_gtid(gtid)->t.t_id, __kmp_tid_from_gtid(gtid), status));
 
 #if OMPT_SUPPORT
-    if (ompt_status & ompt_status_track) {
+    if (ompt_enabled) {
 #if OMPT_BLAME
-        if ((ompt_status == ompt_status_track_callback) &&
-            ompt_callbacks.ompt_callback(ompt_event_barrier_end)) {
+        if (ompt_callbacks.ompt_callback(ompt_event_barrier_end)) {
             ompt_callbacks.ompt_callback(ompt_event_barrier_end)(
                 my_parallel_id, my_task_id);
         }
@@ -1381,7 +1382,7 @@ __kmp_join_barrier(int gtid)
 
 #if OMPT_SUPPORT 
 #if OMPT_TRACE
-    if ((ompt_status == ompt_status_track_callback) &&
+    if (ompt_enabled &&
         ompt_callbacks.ompt_callback(ompt_event_barrier_begin)) {
         ompt_callbacks.ompt_callback(ompt_event_barrier_begin)(
             team->t.ompt_team_info.parallel_id,
@@ -1513,14 +1514,13 @@ __kmp_join_barrier(int gtid)
     KA_TRACE(10, ("__kmp_join_barrier: T#%d(%d:%d) leaving\n", gtid, team_id, tid));
 
 #if OMPT_SUPPORT
-    if (ompt_status & ompt_status_track) {
+    if (ompt_enabled) {
 #if OMPT_BLAME
-        if ((ompt_status == ompt_status_track_callback) &&
-            ompt_callbacks.ompt_callback(ompt_event_barrier_end)) {
+        if (ompt_callbacks.ompt_callback(ompt_event_barrier_end)) {
             ompt_callbacks.ompt_callback(ompt_event_barrier_end)(
                 team->t.ompt_team_info.parallel_id,
                 team->t.t_implicit_task_taskdata[tid].ompt_task_info.task_id);
-       }
+        }
 #endif
 
         // return to default state
